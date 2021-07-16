@@ -15,7 +15,7 @@ class imprest_analysis(models.Model):
 
     state = [
         ('draft', 'Draft'),
-        ('submitted', 'Waiting For Manager Approval'),
+        ('submitted', 'Waiting For Finance Manager Approval'),
         ('confirm', 'Confirm'),
         ('post', 'Posted'),
         ('reject', "Rejected")
@@ -28,9 +28,11 @@ class imprest_analysis(models.Model):
     date = fields.Date("Date")
     amount = fields.Float("Amount")
     amount_char = fields.Text("Amount(Character)", compute="compute_char_amount", store=True)
-    state = fields.Selection(state, string="State", required=True, default="draft", index=True,track_visibility='onchange')
+    state = fields.Selection(state, string="State", required=True, default="draft", index=True,
+                             track_visibility='onchange')
     move_id = fields.Many2one('account.move', 'Journal Entry', readonly=True)
-    currency_id = fields.Many2one('res.currency', 'Currency',default=lambda self: self.env.user.company_id.currency_id.id)
+    currency_id = fields.Many2one('res.currency', 'Currency',
+                                  default=lambda self: self.env.user.company_id.currency_id.id)
     company_id = fields.Many2one('res.company', string='Company', required=True, readonly=True,
                                  default=lambda self: self.env['res.company']._company_default_get('imprest.analysis'))
 
@@ -51,9 +53,11 @@ class imprest_analysis(models.Model):
                 'amount_total': amount_untaxed + amount_tax,
             })
 
-    amount_untaxed = fields.Monetary(string='Untaxed Amount', store=True, readonly=True, compute='_amount_all',tracking=True)
+    amount_untaxed = fields.Monetary(string='Untaxed Amount', store=True, readonly=True, compute='_amount_all',
+                                     tracking=True)
     amount_tax = fields.Monetary(string='Taxes', store=True, readonly=True, compute='_amount_all')
     amount_total = fields.Monetary(string='Total', store=True, readonly=True, compute='_amount_all')
+
 
     @api.model
     def create(self, vals):
@@ -85,7 +89,7 @@ class imprest_analysis(models.Model):
 
         move = self.env['account.move'].create({
             'journal_id': journal.id,
-            'ref': self.description,
+            'ref': self.description ,
             'date': self.date,
             'imprest_id': imprest.id,
 
@@ -96,9 +100,9 @@ class imprest_analysis(models.Model):
         AccountMoveLine.create({
             'name': imprest.name,
             'move_id': move.id,
-            'account_id': self.journal_id.payment_credit_account_id.id,
-            'amount_currency': self.amount_total,
-            'currency_id': self.currency_id.id,
+            'account_id': self.journal_id.default_debit_account_id.id,
+            # 'amount_currency': self.amount_total,
+            # 'currency_id': self.currency_id.id,
             'credit': self.amount_total,
             'date': self.date
         })
@@ -111,10 +115,10 @@ class imprest_analysis(models.Model):
                 'name': line.name,
                 'move_id': move.id,
                 'account_id': line.account_id.id,
-                'amount_currency': line.price_unit,
-                'currency_id': self.currency_id.id,
+                # 'amount_currency': line.price_unit,
+                # 'currency_id': self.currency_id.id,
                 'debit': line.price_unit if line.price_unit > 0 else 0,
-                'credit': 0,
+                'credit':  0,
                 'tax_ids': line.taxes_id.ids if line.taxes_id else False,
                 'analytic_account_id': line.analytic_id.id if line.analytic_id else False,
                 'partner_id': line.partner_id.id if line.partner_id else False,
@@ -125,8 +129,7 @@ class imprest_analysis(models.Model):
                 amount = tax['amount']
                 if tax['tax_repartition_line_id']:
                     rep_ln = self.env['account.tax.repartition.line'].browse(tax['tax_repartition_line_id'])
-                    # base_amount = self.env['account.move']._get_base_amount_to_display(tax['base'], rep_ln)
-                    base_amount = amount
+                    base_amount = self.env['account.move']._get_base_amount_to_display(tax['base'], rep_ln)
                 else:
                     base_amount = None
 
@@ -169,27 +172,33 @@ class imprest_analysis(models.Model):
         return super(imprest_analysis, self).unlink()
 
 
+
+
 class imprest_analysis_line(models.Model):
     _name = 'imprest.analysis.line'
     _description = 'Imprest Analysis Line'
 
     imprest_id = fields.Many2one("imprest.analysis", string="Imprest")
+
     type = fields.Selection([('bill', 'Bill'), ('other', 'Other')], default= 'bill')
     date = fields.Date("Date")
     name = fields.Text("Description", required=True)
     partner_id = fields.Many2one('res.partner')
     beneficiary = fields.Text("Beneficiary")
-    account_id = fields.Many2one('account.account')
+    account_id = fields.Many2one('account.account',required=True)
     analytic_id = fields.Many2one("account.analytic.account", string="Analytic Account")
     price_unit = fields.Float("Amount")
-    taxes_id = fields.Many2many('account.tax', string='Taxes',domain=['|', ('active', '=', False), ('active', '=', True)])
+    taxes_id = fields.Many2many('account.tax', string='Taxes',
+                                domain=['|', ('active', '=', False), ('active', '=', True)])
+
     price_subtotal = fields.Monetary(compute='_compute_amount', string='Subtotal', store=True)
     price_total = fields.Monetary(compute='_compute_amount', string='Total', store=True)
     price_tax = fields.Float(compute='_compute_amount', string='Tax', store=True)
-    company_id = fields.Many2one('res.company', related='imprest_id.company_id', string='Company', store=True,readonly=True)
+
+    company_id = fields.Many2one('res.company', related='imprest_id.company_id', string='Company', store=True,
+                                 readonly=True)
     currency_id = fields.Many2one(related='imprest_id.currency_id', store=True, string='Currency', readonly=True)
     state = fields.Selection(related='imprest_id.state', store=True, readonly=False)
-
 
     @api.depends('price_unit', 'taxes_id')
     def _compute_amount(self):
